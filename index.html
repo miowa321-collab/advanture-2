@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diatom Adventure</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  img { -webkit-user-drag: none; user-select: none; }
+
+  .scene {
+    position: fixed;
+    inset: 0;
+    display: none;
+  }
+  .scene.active { display: block; }
+
+  /* ---------- Scene 1 ---------- */
+  #scene1 {
+    background: #000 url("assets/inside-scene.jpg") center / cover no-repeat;
+  }
+
+  /* Wrapper that holds the diatom guy (and the floating hat above him). */
+  #player {
+    position: absolute;
+    left: 6vw;
+    bottom: 6vh;
+    height: 45vh;
+    aspect-ratio: 1423 / 1387;
+    touch-action: none;
+  }
+  #player .guy {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #player.has-hat { cursor: grab; }
+  #player.has-hat.dragging { cursor: grabbing; }
+  #player.has-hat .guy { animation: bob 1.4s ease-in-out infinite; }
+  #player.dragging .guy { animation-play-state: paused; }
+
+  #hat {
+    position: absolute;
+    left: 20%;
+    width: 60%;
+    top: -32%;
+    cursor: pointer;
+    animation: bob 1.6s ease-in-out infinite;
+  }
+
+  #door {
+    position: absolute;
+    right: 10vw;
+    bottom: 8vh;
+    height: 55vh;
+    display: none;
+  }
+  #door.visible { display: block; }
+
+  @keyframes bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-2.5%); }
+  }
+
+  /* ---------- Scene 2 ---------- */
+  #scene2 { background: #000; }
+
+  #house {
+    position: absolute;
+    left: 5vw;
+    bottom: 4vh;
+    height: 85vh;
+  }
+
+  #guy2 {
+    position: absolute;
+    left: 9vw;
+    bottom: 4vh;
+    height: 30vh;
+    z-index: 2;
+  }
+  #guy2.hidden { display: none; }
+
+  #car {
+    position: absolute;
+    left: 50%;
+    bottom: 2vh;
+    width: min(45vw, 80vh);
+    transform: translateX(-35%);
+    cursor: pointer;
+    z-index: 3;
+  }
+  #car.shaking { animation: shake 0.12s linear infinite; cursor: default; }
+  #car.driving {
+    transition: left 1.6s ease-in;
+    left: 120vw;
+    cursor: default;
+  }
+
+  @keyframes shake {
+    0%   { transform: translate(-35%, 0) rotate(0deg); }
+    25%  { transform: translate(calc(-35% - 2px), 1px) rotate(-0.4deg); }
+    50%  { transform: translate(-35%, -1px) rotate(0deg); }
+    75%  { transform: translate(calc(-35% + 2px), 1px) rotate(0.4deg); }
+    100% { transform: translate(-35%, 0) rotate(0deg); }
+  }
+</style>
+</head>
+<body>
+
+<section id="scene1" class="scene active">
+  <div id="player">
+    <img id="hat" src="assets/hat.png" alt="Hat">
+    <img class="guy" id="guy1" src="assets/diatom-guy.png" alt="Diatom guy">
+  </div>
+  <img id="door" src="assets/door.png" alt="Door">
+</section>
+
+<section id="scene2" class="scene">
+  <img id="house" src="assets/house.png" alt="House">
+  <img id="guy2" src="assets/diatom-guy-with-hat.png" alt="Diatom guy with hat">
+  <img id="car" src="assets/car.png" alt="Car">
+</section>
+
+<script>
+  // Preload swapped-in images so swaps don't flicker.
+  ["assets/diatom-guy-with-hat.png", "assets/car-with-driver.png"].forEach(src => {
+    new Image().src = src;
+  });
+
+  const scene1 = document.getElementById("scene1");
+  const scene2 = document.getElementById("scene2");
+  const player = document.getElementById("player");
+  const guy1 = document.getElementById("guy1");
+  const hat = document.getElementById("hat");
+  const door = document.getElementById("door");
+  const guy2 = document.getElementById("guy2");
+  const car = document.getElementById("car");
+
+  // ----- Scene 1: pick up the hat -----
+  hat.addEventListener("click", () => {
+    guy1.src = "assets/diatom-guy-with-hat.png";
+    hat.remove();
+    door.classList.add("visible");
+    player.classList.add("has-hat");
+  });
+
+  // ----- Scene 1: drag the guy to the door -----
+  let drag = null;
+
+  player.addEventListener("pointerdown", e => {
+    if (!player.classList.contains("has-hat")) return;
+    e.preventDefault();
+    player.setPointerCapture(e.pointerId);
+    drag = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origLeft: player.offsetLeft,
+      origTop: player.offsetTop,
+    };
+    player.style.left = drag.origLeft + "px";
+    player.style.top = drag.origTop + "px";
+    player.style.bottom = "auto";
+    player.classList.add("dragging");
+  });
+
+  player.addEventListener("pointermove", e => {
+    if (!drag) return;
+    player.style.left = drag.origLeft + (e.clientX - drag.startX) + "px";
+    player.style.top = drag.origTop + (e.clientY - drag.startY) + "px";
+  });
+
+  function endDrag(e) {
+    if (!drag) return;
+    player.classList.remove("dragging");
+    const reachedDoor = e.type === "pointerup" && overlapsDoor();
+    drag = null;
+    if (reachedDoor) {
+      startScene2();
+    } else {
+      // Snap back to the starting spot.
+      player.style.left = "";
+      player.style.top = "";
+      player.style.bottom = "";
+    }
+  }
+  player.addEventListener("pointerup", endDrag);
+  player.addEventListener("pointercancel", endDrag);
+
+  function overlapsDoor() {
+    const g = guy1.getBoundingClientRect();
+    const d = door.getBoundingClientRect();
+    const cx = g.left + g.width / 2;
+    const cy = g.top + g.height / 2;
+    // The guy's centre has to be over the door.
+    return cx > d.left && cx < d.right && cy > d.top && cy < d.bottom;
+  }
+
+  // ----- Scene 2 -----
+  function startScene2() {
+    scene1.classList.remove("active");
+    scene2.classList.add("active");
+  }
+
+  let carStarted = false;
+  car.addEventListener("click", () => {
+    if (carStarted) return;
+    carStarted = true;
+    guy2.classList.add("hidden");
+    car.src = "assets/car-with-driver.png";
+    car.classList.add("shaking");
+    setTimeout(() => {
+      car.classList.remove("shaking");
+      car.classList.add("driving");
+    }, 1000);
+  });
+</script>
+</body>
+</html>
